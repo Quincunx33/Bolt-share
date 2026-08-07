@@ -1,5 +1,18 @@
 // main.js — UI wiring
 
+// Register Service Worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((reg) => {
+        console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
+      })
+      .catch((err) => {
+        console.error('[PWA] ServiceWorker registration failed:', err);
+      });
+  });
+}
+
 import { FileSharePeer } from './peer.js'
 
 // ── DOM refs ──
@@ -705,6 +718,40 @@ sendBtn.addEventListener('click', () => {
   }
 })
 
+// ── Global Error & Status Notice Toast ──
+function showToastNotice(msg) {
+  let noticeEl = document.getElementById('global-toast-notice')
+  if (!noticeEl) {
+    noticeEl = document.createElement('div')
+    noticeEl.id = 'global-toast-notice'
+    noticeEl.style.position = 'fixed'
+    noticeEl.style.bottom = '24px'
+    noticeEl.style.right = '24px'
+    noticeEl.style.zIndex = '9999'
+    noticeEl.style.backgroundColor = 'var(--text)'
+    noticeEl.style.color = 'var(--bg)'
+    noticeEl.style.padding = '12px 18px'
+    noticeEl.style.borderRadius = 'var(--radius-md)'
+    noticeEl.style.fontSize = '13.5px'
+    noticeEl.style.fontWeight = '500'
+    noticeEl.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.2)'
+    noticeEl.style.transition = 'all 0.3s ease'
+    noticeEl.style.opacity = '0'
+    noticeEl.style.transform = 'translateY(10px)'
+    document.body.appendChild(noticeEl)
+  }
+
+  noticeEl.textContent = msg
+  noticeEl.style.opacity = '1'
+  noticeEl.style.transform = 'translateY(0)'
+
+  if (window._noticeTimer) clearTimeout(window._noticeTimer)
+  window._noticeTimer = setTimeout(() => {
+    noticeEl.style.opacity = '0'
+    noticeEl.style.transform = 'translateY(10px)'
+  }, 4000)
+}
+
 // ── Receive toast elements ──
 const toastActions = document.getElementById('toast-actions')
 const toastProgressWrap = document.getElementById('toast-progress-wrap')
@@ -812,7 +859,8 @@ const fsp = new FileSharePeer({
     }
   },
   onError(msg) {
-    setStatus('Error: ' + msg)
+    setStatus('Status: ' + msg)
+    showToastNotice(msg)
   },
   onFileReceived(peerId, fileInfo) {
     addTransferToHistory({

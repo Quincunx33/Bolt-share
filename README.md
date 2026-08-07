@@ -1,56 +1,68 @@
-# BoltDrop
+# BoltDrop — Ultra-Fast Secure P2P File Sharing
 
-A secure, ultra-fast, direct peer-to-peer (P2P) file sharing application built for modern browsers. BoltDrop uses native WebRTC connection channels to securely stream photos, videos, archives, and documents directly between devices without intermediate servers or storage limits.
+![BoltDrop Banner](./src/assets/images/boltdrop_logo_1786132351711.jpg)
 
----
-
-## Highlights
-
-- **Direct P2P Streaming:** Streams files byte-by-byte directly from the sender's browser to the receiver. No file size limits, and no server storage.
-- **Dual Progress Visualization:** Real-time transfer stats showing both individual file progress and overall batch progress.
-- **Customizable Identity:** Share your generated peer name or use clean custom URLs for quick, branded room sharing.
-- **Zero Configuration:** Automatically discovers other peers on your local Wi-Fi, or connect globally with a few clicks.
+<p center>
+  <a href="https://sharep2p.pages.dev/"><img src="https://img.shields.io/badge/Live_Site-sharep2p.pages.dev-2563eb?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Live Site"></a>
+  <img src="https://img.shields.io/badge/WebRTC-Direct_P2P-green?style=for-the-badge" alt="WebRTC">
+  <img src="https://img.shields.io/badge/Security-E2E_Encrypted-blueviolet?style=for-the-badge" alt="Encrypted">
+</p>
 
 ---
 
-## How It Works
+## 📸 Media Gallery
 
-1. **Signaling & Discovery:** BoltDrop initializes a secure signaling channel to let browsers find each other.
-2. **WebRTC Connection:** Once discovered, peers establish direct WebRTC data channels.
-3. **Chunked Stream:** Files are divided into small chunks and sent over the secure WebRTC connection.
-4. **Local Reconstitution:** The receiving browser reassembles the chunks in memory and automatically initiates a local download once fully received.
-
----
-
-## Tech Stack
-
-- **Core Engine:** HTML5, CSS3, ES6+ Javascript
-- **Network Protocol:** Native WebRTC & PeerJS
-- **Build System:** Vite & Bun
+| BoltDrop Brand | FileDrop Interface | BoltShare System |
+| :---: | :---: | :---: |
+| ![BoltDrop Logo](./src/assets/images/boltdrop_logo_1786132351711.jpg) | ![FileDrop Logo](./src/assets/images/filedrop_logo_1786129018907.jpg) | ![BoltShare Logo](./src/assets/images/bolt_share_logo_1786129154783.jpg) |
 
 ---
 
-## Getting Started
+## 🚀 Overview
 
-### Local Development
+**BoltDrop** (hosted at [https://sharep2p.pages.dev](https://sharep2p.pages.dev)) is a secure, ultra-fast, direct peer-to-peer (P2P) file sharing application built for modern web browsers. BoltDrop uses native WebRTC data channels to securely stream photos, videos, archives, and documents directly between devices without intermediate servers, cloud storage, or file size limits.
 
-Install the package dependencies:
-```bash
-npm install
-```
+---
 
-Start the development server:
-```bash
-npm run dev
-```
+## ⭐ Key Features
 
-Open `http://localhost:3000` in multiple tabs or different devices on your network to experience P2P transfer.
+- ⚡ **Direct P2P Streaming:** Files are sent byte-by-byte directly from sender to receiver. No server storage or file size caps.
+- 🛡️ **End-to-End Privacy:** Data flows encrypted through WebRTC peer connections.
+- 📊 **Real-Time Dual Progress Tracker:** Detailed batch and per-file progress meters with live transfer speeds.
+- 🌐 **Dual Mode Connectivity:**
+  - **Wi-Fi Local Share:** Auto-discovers devices sharing the same public IP.
+  - **Global Internet Mode:** Instant room code generation for remote device connections worldwide.
+- 🔄 **Self-Healing Connection:** Automatic ICE restarts, ping/pong keepalives, and automatic reconnection on network drops.
 
-### Production Build
+---
 
-Generate optimized static assets:
-```bash
-npm run build
-```
+## 🛠️ How It Works
 
-The compiled output will be available in the `dist` directory, ready to be deployed to any static hosting provider.
+1. **Signaling & Discovery:** BoltDrop uses an optimized signaling server to exchange WebRTC offer/answer SDPs.
+2. **Direct Peer Connection:** Once signaling completes, a secure RTCPeerConnection and DataChannel are established directly between browsers.
+3. **Chunked Streaming:** Files are broken into 64KB chunks and transferred with backpressure management.
+4. **Instant Download:** The receiving browser reassembles chunks and automatically triggers a local download.
+
+---
+
+## 💻 Local Development
+
+1. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Start Dev Server:**
+   ```bash
+   npm run dev
+   ```
+
+3. **Open Application:**
+   Visit `http://localhost:3000` in multiple tabs or devices on your network to test P2P file sharing.
+
+---
+
+## 🌐 Live Production Deployment
+
+- **Main Production URL:** [https://sharep2p.pages.dev](https://sharep2p.pages.dev)
+- **Deployment Platform:** Cloudflare Pages / Cloudflare Workers

@@ -1,8 +1,24 @@
-// frontend/peer.js — native WebRTC, trickle ICE with candidate queuing
+// frontend/peer.js — native WebRTC, trickle ICE, automatic ICE restart & robust error handling
 
 const CHUNK_SIZE = 64 * 1024
 const DEFAULT_ROOM = 'filedrop-default-room'
-const SIGNAL_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/signal`
+
+function getSignalUrl() {
+  const customUrl = localStorage.getItem('boltdrop_custom_signal_url')
+  if (customUrl && customUrl.trim()) {
+    let url = customUrl.trim()
+    if (url.startsWith('http://')) url = url.replace('http://', 'ws://')
+    if (url.startsWith('https://')) url = url.replace('https://', 'wss://')
+    if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+      url = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${url}`
+    }
+    if (!url.includes('/signal')) {
+      url = url.replace(/\/$/, '') + '/signal'
+    }
+    return url
+  }
+  return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/signal`
+}
 
 function getRoomId() {
   return window.location.hash.replace('#', '').trim() || DEFAULT_ROOM
@@ -17,26 +33,36 @@ function genId() {
 
 const RTC_CONFIG = {
   iceServers: [
+    { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.services.mozilla.com' }
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
   ],
+  iceCandidatePoolSize: 10
 }
 
 export class FileSharePeer {
   constructor({ peerId, onReady, onPeerJoin, onPeerLeave, onFileOffer, onProgress, onError, onFileReceived }) {
-    this.onReady     = onReady
-    this.onPeerJoin  = onPeerJoin
-    this.onPeerLeave = onPeerLeave
-    this.onFileOffer = onFileOffer
-    this.onProgress  = onProgress
-    this.onError     = onError
-    this.onFileReceived = onFileReceived
+    this.onReady     = onReady || (() => {})
+    this.onPeerJoin  = onPeerJoin || (() => {})
+    this.onPeerLeave = onPeerLeave || (() => {})
+    this.onFileOffer = onFileOffer || (() => {})
+    this.onProgress  = onProgress || (() => {})
+    this.onError     = onError || (() => {})
+    this.onFileReceived = onFileReceived || (() => {})
 
     this.myId            = peerId || genId()
     this.ws              = null
-    this.peerConns       = new Map()  // peerId → { pc, iceCandidateQueue, remoteDescSet }
+    this.heartbeatTimer  = null
+    this.reconnectTimer  = null
+    this.reconnectAttempts = 0
+    this.lastPingResponse = Date.now()
+
+    this.peerConns       = new Map()  // peerId → { pc, iceCandidateQueue, remoteDescSet, iceRestartAttempts, connTimeout }
     this.dataChannels    = new Map()
     this.pendingReceive  = null
     this._receiveBuffers = new Map()
@@ -44,126 +70,260 @@ export class FileSharePeer {
     this.activeBatches   = new Map()  // peerId → { batchId, files, currentFileIndex, onProgress }
     this.receivedBatches = new Map()  // batchId → { batchId, files, accepted, currentFileIndex, totalSize }
 
+    this._setupNetworkListeners()
     this._connect()
   }
 
+  _setupNetworkListeners() {
+    window.addEventListener('online', () => {
+      console.log('[network] browser back online')
+      this.onError('Network restored. Reconnecting...')
+      this.reconnectAttempts = 0
+      this._connect()
+    })
+
+    window.addEventListener('offline', () => {
+      console.warn('[network] browser offline')
+      this.onError('Network connection lost. Waiting to reconnect...')
+      this._stopHeartbeat()
+      if (this.ws) {
+        try { this.ws.close() } catch (e) {}
+      }
+    })
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat()
+    this.lastPingResponse = Date.now()
+
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // Watchdog: If no pong or message in 35s, force reconnect
+        if (Date.now() - this.lastPingResponse > 35000) {
+          console.warn('[signal] Heartbeat lost. Forcing reconnection...')
+          try { this.ws.close() } catch (e) {}
+          return
+        }
+
+        try {
+          this.ws.send(JSON.stringify({ type: 'ping' }))
+        } catch (e) {
+          console.error('[signal] Ping send error:', e)
+        }
+      }
+    }, 15000)
+  }
+
+  _stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+  }
+
+  _scheduleReconnect() {
+    this._stopHeartbeat()
+    if (this.reconnectTimer) return
+
+    const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 12000) + (Math.random() * 500)
+    this.reconnectAttempts++
+    console.log(`[signal] Reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts})...`)
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this._connect()
+    }, delay)
+  }
+
   _connect() {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return
+    }
+
+    this._stopHeartbeat()
     const room = getRoomId()
-    const url  = `${SIGNAL_URL}?peerId=${encodeURIComponent(this.myId)}&room=${encodeURIComponent(room)}`
-    console.log('[signal] connecting to', url)
-    this.ws = new WebSocket(url)
+    const signalBase = getSignalUrl()
+    const separator = signalBase.includes('?') ? '&' : '?'
+    const url  = `${signalBase}${separator}peerId=${encodeURIComponent(this.myId)}&room=${encodeURIComponent(room)}`
+    
+    console.log('[signal] Connecting to:', url)
+
+    try {
+      this.ws = new WebSocket(url)
+    } catch (err) {
+      console.error('[signal] WebSocket instantiation failed:', err)
+      this._scheduleReconnect()
+      return
+    }
 
     this.ws.onopen = () => {
-      console.log('[signal] connected')
+      console.log('[signal] Connected successfully')
+      this.reconnectAttempts = 0
+      this._startHeartbeat()
       this.onReady(this.myId)
     }
 
     this.ws.onmessage = async (event) => {
-      const msg = JSON.parse(event.data)
-      console.log('[signal] received:', msg.type, msg.from || '', msg.peers || '')
+      this.lastPingResponse = Date.now()
+      let msg
+      try {
+        msg = JSON.parse(event.data)
+      } catch (err) {
+        console.error('[signal] Invalid JSON message:', err)
+        return
+      }
 
-      if (msg.type === 'PEER_LIST') {
-        for (const peerId of msg.peers) {
-          console.log('[rtc] creating offer for', peerId)
-          await this._createOffer(peerId)
+      if (msg.type === 'ping') {
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ type: 'pong' }))
         }
+        return
       }
+      if (msg.type === 'pong') return
 
-      if (msg.type === 'PEER_JOINED') {
-        console.log('[signal] peer joined, waiting for their offer:', msg.peerId)
-      }
+      console.log('[signal] Received:', msg.type, msg.from || '', msg.peers || '')
 
-      if (msg.type === 'PEER_LEFT') {
-        this._removePeer(msg.peerId)
-      }
-
-      if (msg.type === 'offer') {
-        console.log('[rtc] got offer from', msg.from)
-        await this._handleOffer(msg.from, msg.sdp)
-      }
-
-      if (msg.type === 'answer') {
-        console.log('[rtc] got answer from', msg.from)
-        await this._handleAnswer(msg.from, msg.sdp)
-      }
-
-      if (msg.type === 'ice') {
-        console.log('[rtc] got ICE from', msg.from, msg.candidate?.candidate?.split(' ')[7])
-        await this._handleIce(msg.from, msg.candidate)
+      try {
+        if (msg.type === 'PEER_LIST') {
+          for (const peerId of msg.peers) {
+            console.log('[rtc] Creating offer for peer:', peerId)
+            await this._createOffer(peerId)
+          }
+        } else if (msg.type === 'PEER_JOINED') {
+          console.log('[signal] Peer joined:', msg.peerId)
+        } else if (msg.type === 'PEER_LEFT') {
+          this._removePeer(msg.peerId)
+        } else if (msg.type === 'offer') {
+          console.log('[rtc] Got offer from:', msg.from)
+          await this._handleOffer(msg.from, msg.sdp)
+        } else if (msg.type === 'answer') {
+          console.log('[rtc] Got answer from:', msg.from)
+          await this._handleAnswer(msg.from, msg.sdp)
+        } else if (msg.type === 'ice') {
+          await this._handleIce(msg.from, msg.candidate)
+        }
+      } catch (err) {
+        console.error(`[signal] Error handling ${msg.type} from ${msg.from}:`, err)
       }
     }
 
     this.ws.onclose = (e) => {
-      console.log('[signal] closed', e.code, e.reason)
-      setTimeout(() => this._connect(), 2000)
+      console.warn('[signal] Closed:', e.code, e.reason)
+      this._stopHeartbeat()
+      this._scheduleReconnect()
     }
 
-    this.ws.onerror = () => {
-      this.onError('Signaling connection failed')
+    this.ws.onerror = (err) => {
+      console.error('[signal] WebSocket error:', err)
+      this._stopHeartbeat()
+      this.onError('Signaling connection error. Reconnecting...')
     }
   }
 
   _signal(to, msg) {
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ ...msg, to }))
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({ ...msg, to }))
+      } catch (e) {
+        console.error('[signal] Send error:', e)
+      }
+    } else {
+      console.warn('[signal] Cannot send message, WebSocket not open')
     }
   }
 
-  // ── Create a new RTCPeerConnection with queuing support ──
+  // ── Create a new RTCPeerConnection with queuing & error resilience ──
   _createPC(peerId) {
     if (this.peerConns.has(peerId)) return this.peerConns.get(peerId)
 
     const pc = new RTCPeerConnection(RTC_CONFIG)
-    const entry = { pc, iceCandidateQueue: [], remoteDescSet: false }
+    const entry = {
+      pc,
+      iceCandidateQueue: [],
+      remoteDescSet: false,
+      iceRestartAttempts: 0,
+      connTimeout: null
+    }
     this.peerConns.set(peerId, entry)
 
-    // Send ICE candidates as they arrive (trickle ICE)
+    // Connection watchdog timer (18s timeout)
+    entry.connTimeout = setTimeout(() => {
+      if (pc.connectionState !== 'connected') {
+        console.warn(`[rtc] Connection to ${peerId} timed out. Attempting ICE restart...`)
+        this._triggerIceRestart(peerId)
+      }
+    }, 18000)
+
+    // Send trickle ICE candidates
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log('[rtc] sending ICE to', peerId, event.candidate.candidate.split(' ')[7])
         this._signal(peerId, { type: 'ice', candidate: event.candidate })
-      } else {
-        console.log('[rtc] ICE gathering complete for', peerId)
       }
     }
 
-    pc.onconnectionstatechange = () => {      
-      console.log('[rtc] connection state with', peerId, ':', pc.connectionState)
-      if (pc.connectionState === 'connected') {
+    // Robust State Monitoring & Auto ICE Restart
+    const handleStateChange = () => {
+      const state = pc.connectionState || pc.iceConnectionState
+      console.log(`[rtc] Peer ${peerId} state:`, state)
+
+      if (state === 'connected') {
+        if (entry.connTimeout) {
+          clearTimeout(entry.connTimeout)
+          entry.connTimeout = null
+        }
+        entry.iceRestartAttempts = 0
         this.onPeerJoin(peerId)
-      }
-      if (pc.connectionState === 'failed') {
-        console.log('[rtc] failed with', peerId)
-        this._removePeer(peerId)
-      }
-      if (pc.connectionState === 'disconnected') {
-        this._removePeer(peerId)
+      } else if (state === 'failed' || state === 'disconnected') {
+        if (entry.iceRestartAttempts < 2) {
+          console.warn(`[rtc] Connection ${state} with ${peerId}. Triggering ICE Restart (${entry.iceRestartAttempts + 1}/2)...`)
+          entry.iceRestartAttempts++
+          this._triggerIceRestart(peerId)
+        } else {
+          console.error(`[rtc] Connection unrecoverable with ${peerId}`)
+          this.onError(`Direct connection to peer failed.`)
+          this._removePeer(peerId)
+        }
       }
     }
 
-    pc.onsignalingstatechange = () => {
-      console.log('[rtc] signaling state with', peerId, ':', pc.signalingState)
-    }
-
-    pc.onicegatheringstatechange = () => {
-      console.log('[rtc] ICE gathering:', pc.iceGatheringState)
-    }
+    pc.onconnectionstatechange = handleStateChange
+    pc.oniceconnectionstatechange = handleStateChange
 
     return entry
+  }
+
+  async _triggerIceRestart(peerId) {
+    const entry = this.peerConns.get(peerId)
+    if (!entry) return
+    const { pc } = entry
+
+    try {
+      console.log('[rtc] Initiating ICE restart offer to', peerId)
+      const offer = await pc.createOffer({ iceRestart: true })
+      await pc.setLocalDescription(offer)
+      this._signal(peerId, { type: 'offer', sdp: pc.localDescription.sdp })
+    } catch (err) {
+      console.error('[rtc] ICE restart failed for', peerId, err)
+    }
   }
 
   async _createOffer(peerId) {
     const { pc } = this._createPC(peerId)
 
-    const dc = pc.createDataChannel('filedrop', { ordered: true })
-    this._bindDataChannel(dc, peerId)
-    this.dataChannels.set(peerId, dc)
+    try {
+      const dc = pc.createDataChannel('filedrop', { ordered: true })
+      this._bindDataChannel(dc, peerId)
+      this.dataChannels.set(peerId, dc)
 
-    const offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
 
-    console.log('[rtc] sending offer to', peerId)
-    this._signal(peerId, { type: 'offer', sdp: pc.localDescription.sdp })
+      console.log('[rtc] Sending offer to', peerId)
+      this._signal(peerId, { type: 'offer', sdp: pc.localDescription.sdp })
+    } catch (err) {
+      console.error('[rtc] Create offer error:', err)
+      this.onError('Failed to initiate WebRTC connection')
+    }
   }
 
   async _handleOffer(peerId, sdp) {
@@ -171,27 +331,30 @@ export class FileSharePeer {
     const { pc } = entry
 
     pc.ondatachannel = (event) => {
-      console.log('[rtc] got data channel from', peerId)
+      console.log('[rtc] Got data channel from', peerId)
       const dc = event.channel
       this.dataChannels.set(peerId, dc)
       this._bindDataChannel(dc, peerId)
     }
 
-    await pc.setRemoteDescription({ type: 'offer', sdp })
-    entry.remoteDescSet = true
+    try {
+      await pc.setRemoteDescription({ type: 'offer', sdp })
+      entry.remoteDescSet = true
 
-    // Flush any queued ICE candidates that arrived before remote desc
-    console.log('[rtc] flushing', entry.iceCandidateQueue.length, 'queued ICE candidates')
-    for (const candidate of entry.iceCandidateQueue) {
-      try { await pc.addIceCandidate(candidate) } catch (e) {}
+      // Flush any queued ICE candidates
+      for (const candidate of entry.iceCandidateQueue) {
+        try { await pc.addIceCandidate(candidate) } catch (e) {}
+      }
+      entry.iceCandidateQueue = []
+
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+
+      console.log('[rtc] Sending answer to', peerId)
+      this._signal(peerId, { type: 'answer', sdp: pc.localDescription.sdp })
+    } catch (err) {
+      console.error('[rtc] Handle offer error:', err)
     }
-    entry.iceCandidateQueue = []
-
-    const answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
-
-    console.log('[rtc] sending answer to', peerId)
-    this._signal(peerId, { type: 'answer', sdp: pc.localDescription.sdp })
   }
 
   async _handleAnswer(peerId, sdp) {
@@ -199,15 +362,17 @@ export class FileSharePeer {
     if (!entry) return
     const { pc } = entry
 
-    await pc.setRemoteDescription({ type: 'answer', sdp })
-    entry.remoteDescSet = true
+    try {
+      await pc.setRemoteDescription({ type: 'answer', sdp })
+      entry.remoteDescSet = true
 
-    // Flush any queued ICE candidates
-    console.log('[rtc] flushing', entry.iceCandidateQueue.length, 'queued ICE candidates')
-    for (const candidate of entry.iceCandidateQueue) {
-      try { await pc.addIceCandidate(candidate) } catch (e) {}
+      for (const candidate of entry.iceCandidateQueue) {
+        try { await pc.addIceCandidate(candidate) } catch (e) {}
+      }
+      entry.iceCandidateQueue = []
+    } catch (err) {
+      console.error('[rtc] Handle answer error:', err)
     }
-    entry.iceCandidateQueue = []
   }
 
   async _handleIce(peerId, candidate) {
@@ -217,14 +382,12 @@ export class FileSharePeer {
     const { pc } = entry
 
     if (!entry.remoteDescSet) {
-      // Queue it — remote description not set yet
-      console.log('[rtc] queuing ICE candidate from', peerId)
       entry.iceCandidateQueue.push(candidate)
     } else {
       try {
         await pc.addIceCandidate(candidate)
       } catch (e) {
-        console.log('[rtc] failed to add ICE candidate', e.message)
+        console.warn('[rtc] ICE candidate add failed:', e.message)
       }
     }
   }
@@ -233,11 +396,17 @@ export class FileSharePeer {
     dc.binaryType = 'arraybuffer'
 
     dc.onopen = () => {
-      console.log('[dc] data channel open with', peerId)
+      console.log('[dc] Data channel OPEN with', peerId)
     }
 
     dc.onclose = () => {
-      console.log('[dc] data channel closed with', peerId)
+      console.warn('[dc] Data channel CLOSED with', peerId)
+      this._cleanupPeerTransfers(peerId, 'Data channel closed')
+    }
+
+    dc.onerror = (err) => {
+      console.error('[dc] Data channel ERROR:', err)
+      this._cleanupPeerTransfers(peerId, 'Data channel error')
     }
 
     dc.onmessage = (event) => {
@@ -245,14 +414,40 @@ export class FileSharePeer {
     }
   }
 
-  // ── File transfer ──
+  _cleanupPeerTransfers(peerId, reason) {
+    // Abort sender side transfers
+    const transfer = this.activeTransfers.get(peerId)
+    if (transfer) {
+      transfer.aborted = true
+      this.activeTransfers.delete(peerId)
+    }
+
+    const batch = this.activeBatches.get(peerId)
+    if (batch) {
+      this.activeBatches.delete(peerId)
+      try { batch.onProgress(-1) } catch (e) {}
+      this.onError(`Transfer aborted: ${reason}`)
+    }
+
+    // Clean receiver buffers
+    const rxState = this._receiveBuffers.get(peerId)
+    if (rxState) {
+      this._receiveBuffers.delete(peerId)
+      this.onError(`Receive interrupted: ${reason}`)
+    }
+  }
+
+  // ── Robust File Transfer Mechanics ──
 
   sendFile(peerId, files, onProgress) {
     const fileList = (files instanceof FileList || Array.isArray(files)) ? Array.from(files) : [files]
     if (fileList.length === 0) return
 
     const dc = this.dataChannels.get(peerId)
-    if (!dc || dc.readyState !== 'open') throw new Error('Not connected')
+    if (!dc || dc.readyState !== 'open') {
+      this.onError('Cannot send: Peer connection is not active')
+      throw new Error('Not connected')
+    }
 
     const batchId = Math.random().toString(36).substring(2, 11)
     
@@ -263,11 +458,16 @@ export class FileSharePeer {
       onProgress
     })
 
-    dc.send(JSON.stringify({
-      type: 'BATCH_OFFER',
-      batchId,
-      files: fileList.map(f => ({ name: f.name, size: f.size, mime: f.type }))
-    }))
+    try {
+      dc.send(JSON.stringify({
+        type: 'BATCH_OFFER',
+        batchId,
+        files: fileList.map(f => ({ name: f.name, size: f.size, mime: f.type }))
+      }))
+    } catch (err) {
+      console.error('[dc] Batch offer send error:', err)
+      this.onError('Failed to send file offer')
+    }
   }
 
   _sendBatchNextFile(peerId, batchId, index) {
@@ -277,16 +477,24 @@ export class FileSharePeer {
     batch.currentFileIndex = index
     const file = batch.files[index]
     const dc = this.dataChannels.get(peerId)
-    if (!dc || dc.readyState !== 'open') return
+    if (!dc || dc.readyState !== 'open') {
+      this.onError('Data channel closed before sending file')
+      return
+    }
 
-    dc.send(JSON.stringify({
-      type: 'FILE_OFFER',
-      batchId,
-      fileIndex: index,
-      name: file.name,
-      size: file.size,
-      mime: file.type
-    }))
+    try {
+      dc.send(JSON.stringify({
+        type: 'FILE_OFFER',
+        batchId,
+        fileIndex: index,
+        name: file.name,
+        size: file.size,
+        mime: file.type
+      }))
+    } catch (e) {
+      this.onError('Failed to start file transfer')
+      return
+    }
 
     let offset = 0
     const reader = new FileReader()
@@ -295,15 +503,14 @@ export class FileSharePeer {
     this.activeTransfers.set(peerId, transfer)
 
     try {
-      dc.bufferedAmountLowThreshold = 65536 // 64KB
-    } catch (e) {
-      console.warn('[dc] bufferedAmountLowThreshold not supported', e)
-    }
+      dc.bufferedAmountLowThreshold = 128 * 1024 // 128KB threshold
+    } catch (e) {}
 
     const readNext = () => {
       if (transfer.aborted) return
       
-      if (dc.bufferedAmount > 1024 * 1024) {
+      // High backpressure guard (pause read if > 2MB buffered)
+      if (dc.bufferedAmount > 2 * 1024 * 1024) {
         dc.onbufferedamountlow = () => {
           dc.onbufferedamountlow = null
           readNext()
@@ -311,8 +518,18 @@ export class FileSharePeer {
         return
       }
       
-      const chunk = file.slice(offset, offset + CHUNK_SIZE)
-      reader.readAsArrayBuffer(chunk)
+      try {
+        const chunk = file.slice(offset, offset + CHUNK_SIZE)
+        reader.readAsArrayBuffer(chunk)
+      } catch (err) {
+        console.error('[file] Read slice error:', err)
+        this._abortTransfer(peerId, batchId, 'Disk read error')
+      }
+    }
+
+    reader.onerror = (err) => {
+      console.error('[file] FileReader error:', err)
+      this._abortTransfer(peerId, batchId, 'Failed to read local file')
     }
 
     reader.onload = (e) => {
@@ -322,7 +539,6 @@ export class FileSharePeer {
         dc.send(e.target.result)
         offset += e.target.result.byteLength
         
-        // Calculate total progress across the whole batch
         const totalSize = batch.files.reduce((sum, f) => sum + f.size, 0)
         let sentBytes = 0
         for (let i = 0; i < index; i++) {
@@ -352,14 +568,22 @@ export class FileSharePeer {
           this.activeTransfers.delete(peerId)
         }
       } catch (err) {
-        console.error('[dc] send error:', err)
-        this.activeTransfers.delete(peerId)
-        this.activeBatches.delete(peerId)
-        this.onError('Send failed: ' + err.message)
+        console.error('[dc] Send error:', err)
+        this._abortTransfer(peerId, batchId, 'Transfer channel interrupted')
       }
     }
 
     readNext()
+  }
+
+  _abortTransfer(peerId, batchId, reason) {
+    const dc = this.dataChannels.get(peerId)
+    if (dc && dc.readyState === 'open') {
+      try {
+        dc.send(JSON.stringify({ type: 'FILE_ABORT', batchId, reason }))
+      } catch (e) {}
+    }
+    this._cleanupPeerTransfers(peerId, reason)
   }
 
   acceptFile() {
@@ -376,6 +600,16 @@ export class FileSharePeer {
   _triggerDownload(senderId, batchId) {
     const state = this._receiveBuffers.get(senderId)
     if (!state) return
+    
+    // Integrity check
+    const totalReceived = state.chunks.reduce((sum, c) => sum + c.byteLength, 0)
+    if (state.meta.size && totalReceived < state.meta.size) {
+      console.error(`[file] Truncated file error: Expected ${state.meta.size}, got ${totalReceived}`)
+      this.onError(`File "${state.meta.name}" was incomplete or corrupted.`)
+      this._receiveBuffers.delete(senderId)
+      return
+    }
+
     const blob = new Blob(state.chunks, { type: state.meta.mime || 'application/octet-stream' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
@@ -389,7 +623,7 @@ export class FileSharePeer {
           blob: blob
         })
       } catch (e) {
-        console.error('Error calling onFileReceived:', e)
+        console.error('Error in onFileReceived:', e)
       }
     }
     
@@ -406,7 +640,13 @@ export class FileSharePeer {
 
   _handleFileMessage(peerId, data) {
     if (typeof data === 'string') {
-      const msg = JSON.parse(data)
+      let msg
+      try {
+        msg = JSON.parse(data)
+      } catch (err) {
+        console.error('[dc] Non-JSON message on channel:', err)
+        return
+      }
 
       if (msg.type === 'BATCH_OFFER') {
         const totalSize = msg.files.reduce((sum, f) => sum + f.size, 0)
@@ -482,6 +722,13 @@ export class FileSharePeer {
         return
       }
 
+      if (msg.type === 'FILE_ABORT') {
+        console.warn('[dc] Peer aborted transfer:', msg.reason)
+        this.onError(`Transfer aborted by sender: ${msg.reason || 'Unknown reason'}`)
+        this._receiveBuffers.delete(peerId)
+        return
+      }
+
       if (msg.type === 'FILE_DONE') {
         const rBatch = this.receivedBatches.get(msg.batchId)
         if (!rBatch) return
@@ -510,6 +757,7 @@ export class FileSharePeer {
           if (nextIndex < batch.files.length) {
             this._sendBatchNextFile(peerId, msg.batchId, nextIndex)
           } else {
+            const totalSize = batch.files.reduce((sum, f) => sum + f.size, 0)
             batch.onProgress({
               pct: 100,
               currentFilePct: 100,
@@ -526,6 +774,7 @@ export class FileSharePeer {
       }
 
     } else {
+      // Incoming ArrayBuffer binary chunk
       const state = this._receiveBuffers.get(peerId)
       if (!state) return
 
@@ -556,7 +805,10 @@ export class FileSharePeer {
 
   _removePeer(peerId) {
     const entry = this.peerConns.get(peerId)
-    if (entry) entry.pc.close()
+    if (entry) {
+      if (entry.connTimeout) clearTimeout(entry.connTimeout)
+      try { entry.pc.close() } catch (e) {}
+    }
     this.peerConns.delete(peerId)
     this.dataChannels.delete(peerId)
     this._receiveBuffers.delete(peerId)

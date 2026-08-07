@@ -60,7 +60,8 @@ wss.on('connection', (ws, request) => {
     }
 
     // Determine room — group by connection IP or room override param
-    const publicIp = request.headers['x-forwarded-for'] || request.socket.remoteAddress || 'default';
+    const rawIp = request.headers['x-forwarded-for'] || request.socket.remoteAddress || 'default';
+    const publicIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
     const roomParam = url.searchParams.get('room');
     const roomId = (roomParam && roomParam !== 'filedrop-default-room')
       ? roomParam
@@ -83,6 +84,10 @@ wss.on('connection', (ws, request) => {
     ws.on('message', (data) => {
       try {
         const msg = JSON.parse(data.toString());
+        if (msg.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong' }));
+          return;
+        }
         if (msg.to && room.has(msg.to)) {
           const targetWs = room.get(msg.to);
           if (targetWs.readyState === WebSocket.OPEN) {

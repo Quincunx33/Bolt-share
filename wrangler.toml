@@ -1,0 +1,12 @@
+name = "boltdrop-signaling"
+main = "_worker.js"
+compatibility_date = "2024-01-01"
+
+[durable_objects]
+bindings = [
+  { name = "SIGNAL_ROOMS", class_name = "SignalRoom" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["SignalRoom"]

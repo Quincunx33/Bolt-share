@@ -16,7 +16,8 @@ export async function onRequest(context) {
     return new Response('peerId is required', { status: 400 });
   }
 
-  const publicIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'default';
+  const rawIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'default';
+  const publicIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
   const roomParam = url.searchParams.get('room');
   const roomId = (roomParam && roomParam !== 'filedrop-default-room')
     ? roomParam
@@ -66,6 +67,10 @@ export async function onRequest(context) {
   server.addEventListener('message', (event) => {
     try {
       const msg = JSON.parse(event.data);
+      if (msg.type === 'ping') {
+        server.send(JSON.stringify({ type: 'pong' }));
+        return;
+      }
       if (msg.to && room.has(msg.to)) {
         const targetWs = room.get(msg.to);
         if (targetWs && targetWs.readyState === 1) {
