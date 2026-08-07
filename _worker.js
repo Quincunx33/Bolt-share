@@ -96,17 +96,22 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
-    if (url.pathname === '/signal' || url.pathname === '/') {
+    // Handle signaling only on /signal route
+    if (url.pathname === '/signal') {
       const peerId = url.searchParams.get('peerId');
       if (!peerId) {
-        return new Response(
-          JSON.stringify({
-            status: 'online',
-            service: 'BoltDrop WebRTC Signaling Server',
-            timestamp: new Date().toISOString()
-          }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        const upgradeHeader = request.headers.get('Upgrade');
+        if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+          return new Response(
+            JSON.stringify({
+              status: 'online',
+              service: 'BoltDrop WebRTC Signaling Server',
+              timestamp: new Date().toISOString()
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response('peerId is required', { status: 400, headers: corsHeaders });
       }
 
       const rawIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'default';
@@ -182,6 +187,10 @@ export default {
       server.addEventListener('error', cleanup);
 
       return new Response(null, { status: 101, webSocket: client, headers: corsHeaders });
+    }
+
+    if (env.ASSETS) {
+      return env.ASSETS.fetch(request);
     }
 
     return new Response('Not Found', { status: 404, headers: corsHeaders });
