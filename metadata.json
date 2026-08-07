@@ -1,0 +1,6 @@
+{
+  "name": "BoltDrop",
+  "description": "Secure, fast, peer-to-peer file transfer directly inside your browser using WebRTC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

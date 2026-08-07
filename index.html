@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BoltDrop — Secure P2P File Transfer</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="logo">
+      <img src="/src/assets/images/bolt_share_logo_1786129154783.jpg" alt="BoltDrop Logo" class="logo-img" />
+      <span class="logo-text">BoltDrop <span class="logo-badge">P2P</span></span>
+    </div>
+    
+    <!-- Segmented Tab Toggler (ShareIt Mode Style) -->
+    <div class="mode-tabs-container header-tabs">
+      <div class="mode-tabs">
+        <button id="tab-local" class="tab-btn active">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+            <line x1="12" y1="18" x2="12.01" y2="18"></line>
+          </svg>
+          <span>Wi-Fi Local Share</span>
+        </button>
+        <button id="tab-internet" class="tab-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+          </svg>
+          <span>Global Internet</span>
+        </button>
+      </div>
+    </div>
+    
+    <div class="header-right">
+      <span id="my-peer-id" style="display:none">—</span>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Workspace -->
+  <main class="dashboard">
+    
+    <div class="workspace-grid">
+      
+      <!-- RADAR WORKSPACE (Left/Center Column) -->
+      <div class="radar-card">
+        <div class="radar-header">
+          <h2 id="radar-title">Scanning Wi-Fi Network</h2>
+          <p id="status-msg" class="status-msg">Looking for devices on your network...</p>
+        </div>
+
+        <div class="radar-stage-wrapper">
+          <div class="radar-stage" id="radar-stage">
+            
+            <!-- Rotating scanning light sweep -->
+            <div class="radar-sweep"></div>
+            
+            <!-- Radar crosshairs -->
+            <div class="radar-crosshair-h"></div>
+            <div class="radar-crosshair-v"></div>
+            
+            <!-- Concentric rings -->
+            <div class="radar-ring ring-1"></div>
+            <div class="radar-ring ring-2"></div>
+            <div class="radar-ring ring-3"></div>
+            
+            <!-- Central Node (YOU / ME) -->
+            <div class="node self-node">
+              <div class="avatar-glow"></div>
+              <div class="avatar">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </div>
+              <span id="my-profile-name" class="self-label">Connecting...</span>
+            </div>
+
+            <!-- Absolute Peer Nodes container -->
+            <div id="peers-container" class="peers-radar-layer"></div>
+
+          </div>
+        </div>
+
+        <div class="radar-footer">
+          <p class="instruction-tip">💡 Tap any device bubble inside the scanner to send photos, videos or documents instantly.</p>
+        </div>
+      </div>
+
+      <!-- SIDEBAR PANEL (Right Column) -->
+      <div class="side-panel">
+        
+        <!-- Connection Room Controller Panel -->
+        <div class="panel-card share-panel" id="share-panel">
+          <div class="share-header">
+            <span class="share-badge" id="share-badge">Local Mode</span>
+            <h3 id="share-title">Connection Hub</h3>
+          </div>
+          <p class="share-desc" id="share-desc">Looking for other devices on your local Wi-Fi network.</p>
+          
+          <div class="share-action-area" id="share-action-area">
+            <!-- Dynamically populated by main.js -->
+          </div>
+        </div>
+
+        <!-- Recent Transfers History Panel -->
+        <div class="panel-card transfers-panel hidden" id="transfers-panel">
+          <div class="transfers-header">
+            <h3>Recent Transfers</h3>
+            <button id="clear-transfers-btn" class="btn-clear">Clear</button>
+          </div>
+          <p class="transfers-empty" id="transfers-empty">No files transferred yet in this session.</p>
+          <div class="transfers-list" id="transfers-list"></div>
+        </div>
+
+        <!-- How it Works Panel -->
+        <div class="panel-card help-card">
+          <h3>P2P File Transfer</h3>
+          <ul class="steps-list">
+            <li>
+              <span class="step-num">⚡</span>
+              <p><strong>Zero Limits:</strong> Stream photos, gigabyte videos, or massive documents directly between devices.</p>
+            </li>
+            <li>
+              <span class="step-num">🔒</span>
+              <p><strong>Absolute Privacy:</strong> Files go straight to the other device. Nothing is stored on any server.</p>
+            </li>
+            <li>
+              <span class="step-num">🚀</span>
+              <p><strong>Max Speed:</strong> Uses local Wi-Fi network bandwidth or high-speed direct internet links.</p>
+            </li>
+          </ul>
+        </div>
+        
+      </div>
+      
+    </div>
+  </main>
+
+  <!-- Send file modal (Overlay) -->
+  <div id="send-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-peer-name" id="modal-peer-name">Send File</div>
+      <p class="modal-hint">Choose a file to stream</p>
+      
+      <label class="file-pick-label" id="file-pick-label">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <span id="file-name-display">Select or Drag File</span>
+        <input type="file" id="file-input" style="display:none" multiple />
+      </label>
+      
+      <!-- Live file thumbnail/type previews container -->
+      <div id="file-preview-container" class="file-preview-container hidden"></div>
+      
+      <div class="modal-actions">
+        <button id="send-btn" class="btn-primary" disabled>Send</button>
+        <button id="cancel-btn" class="btn-ghost">Cancel</button>
+      </div>
+      
+      <div id="progress-wrap" class="progress-wrap hidden">
+        <!-- Individual File Progress Section -->
+        <div class="progress-sub-section" id="individual-progress-section">
+          <div class="progress-sub-header">
+            <span id="individual-file-title" class="progress-sub-title">Sending: file_name.ext</span>
+            <span id="individual-progress-label" class="progress-sub-pct">0%</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="individual-progress-fill"></div>
+          </div>
+        </div>
+
+        <!-- Overall Batch Progress Section -->
+        <div class="progress-sub-section" id="aggregate-progress-section">
+          <div class="progress-sub-header">
+            <span class="progress-sub-title" id="aggregate-title">Overall Progress</span>
+            <span id="progress-label" class="progress-sub-pct">0%</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="progress-info-row">
+          <span></span>
+          <span id="transfer-speed" class="transfer-speed">0 B/s</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receive toast notification -->
+  <div id="receive-toast" class="receive-toast hidden">
+    <div class="toast-inner">
+      <div class="toast-title" id="toast-title">Incoming file offer</div>
+      <div class="toast-file" id="toast-file">file.zip</div>
+      <div class="toast-actions" id="toast-actions">
+        <button id="accept-btn" class="btn-primary">Accept</button>
+        <button id="decline-btn" class="btn-ghost">Decline</button>
+      </div>
+      <div id="toast-progress-wrap" class="progress-wrap hidden">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="toast-progress-fill"></div>
+        </div>
+        <div class="progress-info-row">
+          <span id="toast-progress-label">0%</span>
+          <span id="toast-transfer-speed" class="transfer-speed">0 B/s</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Media Viewer Overlay Modal -->
+  <div id="media-viewer-modal" class="media-viewer hidden">
+    <div class="media-viewer-backdrop" id="media-viewer-close-bg"></div>
+    <div class="media-viewer-box">
+      <div class="media-viewer-header">
+        <div class="media-viewer-title-info">
+          <span id="media-viewer-name" class="media-viewer-name">file_name.mp4</span>
+          <span id="media-viewer-size" class="media-viewer-size">14.2 MB</span>
+        </div>
+        <div class="media-viewer-actions">
+          <a id="media-viewer-download" class="media-viewer-btn btn-download" download>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Download</span>
+          </a>
+          <button id="media-viewer-close" class="media-viewer-btn btn-close" title="Close (Esc)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="media-viewer-content" id="media-viewer-content">
+        <!-- Media element (img or video) will be rendered dynamically here -->
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
