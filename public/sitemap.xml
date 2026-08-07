@@ -1,9 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://sharep2p.pages.dev/</loc>
     <lastmod>2026-08-07</lastmod>
-    <changefreq>weekly</changefreq>
+    <changefreq>daily</changefreq>
     <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://sharep2p.pages.dev/src/assets/images/boltdrop_logo_1786132351711.jpg</image:loc>
+      <image:title>BoltDrop ShareP2P Logo</image:title>
+      <image:caption>BoltDrop Direct P2P WebRTC File Sharing Platform</image:caption>
+    </image:image>
+    <image:image>
+      <image:loc>https://sharep2p.pages.dev/src/assets/images/filedrop_logo_1786129018907.jpg</image:loc>
+      <image:title>FileDrop WebRTC Interface</image:title>
+    </image:image>
+    <image:image>
+      <image:loc>https://sharep2p.pages.dev/src/assets/images/bolt_share_logo_1786129154783.jpg</image:loc>
+      <image:title>BoltShare High Speed Transfer System</image:title>
+    </image:image>
   </url>
 </urlset>

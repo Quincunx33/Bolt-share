@@ -1,4 +1,18 @@
 User-agent: *
 Allow: /
+Disallow: /api/private/
+
+User-agent: Googlebot
+Allow: /
+Allow: /src/assets/images/
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: facebookexternalhit
+Allow: /
 
 Sitemap: https://sharep2p.pages.dev/sitemap.xml
