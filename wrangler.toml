@@ -1,4 +1,4 @@
-name = "boltdrop-signaling"
+name = "bolt-share"
 main = "_worker.js"
 compatibility_date = "2024-01-01"
 
@@ -9,4 +9,4 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["SignalRoom"]
+new_sqlite_classes = ["SignalRoom"]
