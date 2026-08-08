@@ -159,7 +159,7 @@ export default {
         return roomObject.fetch(request);
       }
 
-      // Fallback: Standard isolate WebSockets
+      // Fallback: Standard isolate WebSockets with BroadcastChannel cross-isolate synchronization
       const upgradeHeader = request.headers.get('Upgrade');
       if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
         return new Response('Expected Upgrade: websocket', { status: 426, headers: corsHeaders });
@@ -170,47 +170,154 @@ export default {
       server.accept();
 
       if (!globalThis.rooms) globalThis.rooms = new Map();
-      if (!globalThis.rooms.has(roomId)) globalThis.rooms.set(roomId, new Map());
-      const room = globalThis.rooms.get(roomId);
+      
+      if (!globalThis.rooms.has(roomId)) {
+        let channel = null;
+        try {
+          channel = new BroadcastChannel('filedrop-room-' + roomId);
+        } catch (e) {
+          console.warn('[Isolate] BroadcastChannel not supported:', e);
+        }
 
-      const existingPeers = Array.from(room.keys());
-      server.send(JSON.stringify({ type: 'PEER_LIST', peers: existingPeers }));
+        const roomData = {
+          peers: new Map(),
+          channel
+        };
 
+        if (channel) {
+          channel.onmessage = (event) => {
+            try {
+              const data = event.data;
+              const currentRoom = globalThis.rooms.get(roomId);
+              if (!currentRoom) return;
+
+              if (data.type === 'BC_PING_PEERS') {
+                const localPeerIds = Array.from(currentRoom.peers.keys());
+                if (localPeerIds.length > 0 && channel) {
+                  channel.postMessage({
+                    type: 'BC_PONG_PEERS',
+                    fromIsolatePeers: localPeerIds,
+                    requesterPeerId: data.requesterPeerId
+                  });
+                }
+              } else if (data.type === 'BC_PONG_PEERS') {
+                if (data.requesterPeerId) {
+                  const targetWs = currentRoom.peers.get(data.requesterPeerId);
+                  if (targetWs && targetWs.readyState === 1) {
+                    data.fromIsolatePeers.forEach(pid => {
+                      if (pid !== data.requesterPeerId) {
+                        try {
+                          targetWs.send(JSON.stringify({ type: 'PEER_JOINED', peerId: pid }));
+                        } catch (e) {}
+                      }
+                    });
+                  }
+                }
+              } else if (data.type === 'BC_PEER_JOINED') {
+                const joinedMsg = JSON.stringify({ type: 'PEER_JOINED', peerId: data.peerId });
+                currentRoom.peers.forEach((ws, pid) => {
+                  if (pid !== data.peerId && ws.readyState === 1) {
+                    try { ws.send(joinedMsg); } catch (e) {}
+                  }
+                });
+              } else if (data.type === 'BC_PEER_LEFT') {
+                const leftMsg = JSON.stringify({ type: 'PEER_LEFT', peerId: data.peerId });
+                currentRoom.peers.forEach((ws) => {
+                  if (ws.readyState === 1) {
+                    try { ws.send(leftMsg); } catch (e) {}
+                  }
+                });
+              } else if (data.type === 'BC_SIGNAL') {
+                const targetWs = currentRoom.peers.get(data.to);
+                if (targetWs && targetWs.readyState === 1) {
+                  try { targetWs.send(JSON.stringify(data.payload)); } catch (e) {}
+                }
+              }
+            } catch (err) {
+              console.error('[BC Error]', err);
+            }
+          };
+        }
+
+        globalThis.rooms.set(roomId, roomData);
+      }
+
+      const roomData = globalThis.rooms.get(roomId);
+      const localPeers = roomData.peers;
+      const bc = roomData.channel;
+
+      // Send local peers list
+      const existingLocalPeers = Array.from(localPeers.keys());
+      server.send(JSON.stringify({ type: 'PEER_LIST', peers: existingLocalPeers }));
+
+      // Send joined msg to local peers
       const joinedMsg = JSON.stringify({ type: 'PEER_JOINED', peerId });
-      room.forEach((peerWs, id) => {
+      localPeers.forEach((peerWs, id) => {
         if (id !== peerId && peerWs.readyState === 1) {
           try { peerWs.send(joinedMsg); } catch (e) {}
         }
       });
 
-      room.set(peerId, server);
+      // Register local peer
+      localPeers.set(peerId, server);
+
+      // Broadcast to other isolates
+      if (bc) {
+        try {
+          bc.postMessage({ type: 'BC_PEER_JOINED', peerId });
+          bc.postMessage({ type: 'BC_PING_PEERS', requesterPeerId: peerId });
+        } catch (e) {}
+      }
 
       server.addEventListener('message', (evt) => {
         try {
           const msg = JSON.parse(evt.data);
           if (msg.type === 'ping') {
-            server.send(JSON.stringify({ type: 'pong' }));
+            try { server.send(JSON.stringify({ type: 'pong' })); } catch(e){}
             return;
           }
-          if (msg.to && room.has(msg.to)) {
-            const target = room.get(msg.to);
-            if (target && target.readyState === 1) {
-              target.send(JSON.stringify({ ...msg, from: peerId }));
+          if (msg.to) {
+            if (localPeers.has(msg.to)) {
+              const target = localPeers.get(msg.to);
+              if (target && target.readyState === 1) {
+                target.send(JSON.stringify({ ...msg, from: peerId }));
+              }
+            } else if (bc) {
+              try {
+                bc.postMessage({
+                  type: 'BC_SIGNAL',
+                  to: msg.to,
+                  payload: { ...msg, from: peerId }
+                });
+              } catch (e) {}
             }
           }
         } catch (e) {}
       });
 
       const cleanup = () => {
-        if (room.get(peerId) === server) {
-          room.delete(peerId);
+        if (localPeers.get(peerId) === server) {
+          localPeers.delete(peerId);
+
           const leftMsg = JSON.stringify({ type: 'PEER_LEFT', peerId });
-          room.forEach((peerWs, id) => {
+          localPeers.forEach((peerWs) => {
             if (peerWs.readyState === 1) {
               try { peerWs.send(leftMsg); } catch (e) {}
             }
           });
-          if (room.size === 0) globalThis.rooms.delete(roomId);
+
+          if (bc) {
+            try {
+              bc.postMessage({ type: 'BC_PEER_LEFT', peerId });
+            } catch (e) {}
+          }
+
+          if (localPeers.size === 0) {
+            if (bc) {
+              try { bc.close(); } catch (e) {}
+            }
+            globalThis.rooms.delete(roomId);
+          }
         }
       };
 
