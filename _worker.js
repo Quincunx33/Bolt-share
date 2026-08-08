@@ -4,7 +4,20 @@
 export class SignalRoom {
   constructor(state, env) {
     this.state = state;
-    this.peers = new Map(); // peerId -> WebSocket
+  }
+
+  // Retrieve active websockets & peer IDs directly from state tags
+  // This is immune to Durable Object hibernation memory resets!
+  _getPeersMap() {
+    const map = new Map();
+    const sockets = this.state.getWebSockets();
+    for (const socket of sockets) {
+      const tags = this.state.getTags(socket);
+      if (tags && tags[0]) {
+        map.set(tags[0], socket);
+      }
+    }
+    return map;
   }
 
   async fetch(request) {
@@ -22,14 +35,16 @@ export class SignalRoom {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
+    // Accept WebSocket and tag with peerId for hibernation support
     this.state.acceptWebSocket(server, [peerId]);
-    this.peers.set(peerId, server);
+
+    const peersMap = this._getPeersMap();
 
     // Send existing peers list to the newly connected peer
-    const existingPeers = Array.from(this.peers.keys()).filter(id => id !== peerId);
+    const existingPeers = Array.from(peersMap.keys()).filter(id => id !== peerId);
     server.send(JSON.stringify({ type: 'PEER_LIST', peers: existingPeers }));
 
-    // Broadcast join event
+    // Broadcast join event to all other peers in the room
     this._broadcast({ type: 'PEER_JOINED', peerId }, peerId);
 
     return new Response(null, { status: 101, webSocket: client });
@@ -42,18 +57,21 @@ export class SignalRoom {
       const senderId = tags && tags[0];
 
       if (msg.type === 'ping') {
-        ws.send(JSON.stringify({ type: 'pong' }));
+        try { ws.send(JSON.stringify({ type: 'pong' })); } catch (e) {}
         return;
       }
 
-      if (msg.to && this.peers.has(msg.to)) {
-        const targetWs = this.peers.get(msg.to);
-        if (targetWs && targetWs.readyState === 1) {
-          targetWs.send(JSON.stringify({ ...msg, from: senderId }));
+      if (msg.to) {
+        const peersMap = this._getPeersMap();
+        if (peersMap.has(msg.to)) {
+          const targetWs = peersMap.get(msg.to);
+          if (targetWs && targetWs.readyState === 1) {
+            targetWs.send(JSON.stringify({ ...msg, from: senderId }));
+          }
         }
       }
     } catch (err) {
-      console.error('[SignalRoom] Error parsing message:', err);
+      console.error('[SignalRoom] Error handling message:', err);
     }
   }
 
@@ -61,7 +79,6 @@ export class SignalRoom {
     const tags = this.state.getTags(ws);
     const peerId = tags && tags[0];
     if (peerId) {
-      this.peers.delete(peerId);
       this._broadcast({ type: 'PEER_LEFT', peerId }, peerId);
     }
   }
@@ -72,7 +89,8 @@ export class SignalRoom {
 
   _broadcast(msg, excludePeerId) {
     const data = JSON.stringify(msg);
-    this.peers.forEach((ws, id) => {
+    const peersMap = this._getPeersMap();
+    peersMap.forEach((ws, id) => {
       if (id !== excludePeerId && ws.readyState === 1) {
         try {
           ws.send(data);
@@ -80,6 +98,23 @@ export class SignalRoom {
       }
     });
   }
+}
+
+function getNetworkRoomId(request, roomParam) {
+  if (roomParam && roomParam !== 'filedrop-default-room') {
+    return roomParam;
+  }
+  const rawIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'default';
+  const cleanIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
+
+  if (cleanIp.includes(':')) {
+    // IPv6 address — group by /64 prefix (first 4 segments) so devices on same Wi-Fi match!
+    const parts = cleanIp.split(':').filter(Boolean);
+    const prefix = parts.slice(0, Math.min(4, parts.length)).join(':');
+    return `v6-${prefix}`;
+  }
+  // IPv4 address
+  return `v4-${cleanIp}`;
 }
 
 export default {
@@ -114,12 +149,8 @@ export default {
         return new Response('peerId is required', { status: 400, headers: corsHeaders });
       }
 
-      const rawIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'default';
-      const publicIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
       const roomParam = url.searchParams.get('room');
-      const roomId = (roomParam && roomParam !== 'filedrop-default-room')
-        ? roomParam
-        : publicIp;
+      const roomId = getNetworkRoomId(request, roomParam);
 
       // Primary: Route to Durable Object if configured
       if (env.SIGNAL_ROOMS) {

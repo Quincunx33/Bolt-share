@@ -7,6 +7,23 @@
 // Durable Objects, but for standard setups, this in-memory fallback works beautifully!
 const rooms = new Map(); // roomId -> Map(peerId -> websocket)
 
+function getNetworkRoomId(request, roomParam) {
+  if (roomParam && roomParam !== 'filedrop-default-room') {
+    return roomParam;
+  }
+  const rawIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'default';
+  const cleanIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
+
+  if (cleanIp.includes(':')) {
+    // IPv6 address — group by /64 prefix (first 4 segments) so devices on same Wi-Fi match!
+    const parts = cleanIp.split(':').filter(Boolean);
+    const prefix = parts.slice(0, Math.min(4, parts.length)).join(':');
+    return `v6-${prefix}`;
+  }
+  // IPv4 address
+  return `v4-${cleanIp}`;
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -16,12 +33,8 @@ export async function onRequest(context) {
     return new Response('peerId is required', { status: 400 });
   }
 
-  const rawIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-real-ip') || 'default';
-  const publicIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
   const roomParam = url.searchParams.get('room');
-  const roomId = (roomParam && roomParam !== 'filedrop-default-room')
-    ? roomParam
-    : publicIp;
+  const roomId = getNetworkRoomId(request, roomParam);
 
   // Upgrade connection to WebSocket
   const upgradeHeader = request.headers.get('Upgrade');

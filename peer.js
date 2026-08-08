@@ -90,6 +90,19 @@ export class FileSharePeer {
         try { this.ws.close() } catch (e) {}
       }
     })
+
+    window.addEventListener('hashchange', () => {
+      console.log('[signal] Room hash changed to:', getRoomId())
+      this.peerConns.forEach((entry) => {
+        try { entry.pc.close() } catch (e) {}
+      })
+      this.peerConns.clear()
+      if (this.ws) {
+        try { this.ws.close() } catch (e) {}
+      }
+      this.reconnectAttempts = 0
+      this._connect()
+    })
   }
 
   _startHeartbeat() {
