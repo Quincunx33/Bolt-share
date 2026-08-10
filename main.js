@@ -13,6 +13,37 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// PWA Install Prompt wiring
+let deferredInstallPrompt = null;
+const pwaInstallBtn = document.getElementById('pwa-install-btn');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (pwaInstallBtn) {
+    pwaInstallBtn.classList.remove('hidden');
+  }
+});
+
+if (pwaInstallBtn) {
+  pwaInstallBtn.addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const { outcome } = await deferredInstallPrompt.userChoice;
+    console.log('[PWA] User response to install prompt:', outcome);
+    deferredInstallPrompt = null;
+    pwaInstallBtn.classList.add('hidden');
+  });
+}
+
+window.addEventListener('appinstalled', () => {
+  console.log('[PWA] Application successfully installed!');
+  deferredInstallPrompt = null;
+  if (pwaInstallBtn) {
+    pwaInstallBtn.classList.add('hidden');
+  }
+});
+
 import { FileSharePeer } from './peer.js'
 
 // ── DOM refs ──
@@ -522,8 +553,80 @@ window.addEventListener('keydown', (e) => {
   }
 })
 
+// ── Web Audio API sound notification ──
+function playNotificationSound(type = 'receive') {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    if (ctx.state === 'suspended') {
+      ctx.resume()
+    }
+
+    const now = ctx.currentTime
+
+    if (type === 'receive') {
+      // Gentle two-tone chime for incoming file offer or alert
+      const osc1 = ctx.createOscillator()
+      const gain1 = ctx.createGain()
+      osc1.type = 'sine'
+      osc1.frequency.setValueAtTime(659.25, now) // E5
+      gain1.gain.setValueAtTime(0, now)
+      gain1.gain.linearRampToValueAtTime(0.12, now + 0.02)
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.22)
+
+      osc1.connect(gain1)
+      gain1.connect(ctx.destination)
+      osc1.start(now)
+      osc1.stop(now + 0.22)
+
+      const osc2 = ctx.createOscillator()
+      const gain2 = ctx.createGain()
+      osc2.type = 'sine'
+      osc2.frequency.setValueAtTime(880, now + 0.09) // A5
+      gain2.gain.setValueAtTime(0, now + 0.09)
+      gain2.gain.linearRampToValueAtTime(0.15, now + 0.11)
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.38)
+
+      osc2.connect(gain2)
+      gain2.connect(ctx.destination)
+      osc2.start(now + 0.09)
+      osc2.stop(now + 0.38)
+    } else if (type === 'complete') {
+      // Soft ascending triad for transfer completion
+      [523.25, 659.25, 783.99].forEach((freq, idx) => { // C5, E5, G5
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        const startTime = now + (idx * 0.07)
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(freq, startTime)
+        gain.gain.setValueAtTime(0, startTime)
+        gain.gain.linearRampToValueAtTime(0.1, startTime + 0.015)
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2)
+
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(startTime)
+        osc.stop(startTime + 0.2)
+      })
+    }
+  } catch (e) {
+    console.warn('[audio] Notification sound unavailable:', e)
+  }
+}
+
 // ── Session Transfers History manager ──
 function addTransferToHistory({ name, size, direction, data }) {
+  const now = Date.now()
+  // Deduplication guard: ignore duplicate transfers added within 2 seconds
+  if (sessionTransfers.length > 0) {
+    const last = sessionTransfers[0]
+    if (last.name === name && last.size === size && last.direction === direction && (now - last.timestamp) < 2000) {
+      console.log('[history] Ignored duplicate transfer item:', name)
+      return
+    }
+  }
+
   let objectUrl = ''
   if (data instanceof Blob || data instanceof File) {
     objectUrl = URL.createObjectURL(data)
@@ -535,7 +638,7 @@ function addTransferToHistory({ name, size, direction, data }) {
     direction,
     data,
     objectUrl,
-    timestamp: Date.now()
+    timestamp: now
   }
 
   sessionTransfers.unshift(transfer) // Add to start of list
@@ -695,6 +798,8 @@ sendBtn.addEventListener('click', () => {
   resetSpeedTracker()
   if (transferSpeed) transferSpeed.textContent = '0 B/s'
 
+  let hasRecordedHistory = false
+
   try {
     fsp.sendFile(activePeerId, files, (progress) => {
       if (progress === -1) {
@@ -748,7 +853,8 @@ sendBtn.addEventListener('click', () => {
       }
       modalPeerName.textContent = `Sending ${currentFileIndex + 1} of ${totalFiles}: ${currentFileName}`
 
-      if (pct === 100) {
+      if (pct === 100 && !hasRecordedHistory) {
+        hasRecordedHistory = true
         // Add to transfer history
         Array.from(files).forEach(f => {
           addTransferToHistory({
@@ -894,6 +1000,7 @@ const fsp = new FileSharePeer({
     removePeerNode(peerId)
   },
   onFileOffer(peerId, meta) {
+    playNotificationSound('receive')
     showReceiveToast(peerId, meta)
   },
   onProgress(peerId, progressInfo) {
@@ -921,6 +1028,7 @@ const fsp = new FileSharePeer({
     showToastNotice(msg)
   },
   onFileReceived(peerId, fileInfo) {
+    playNotificationSound('complete')
     addTransferToHistory({
       name: fileInfo.name,
       size: fileInfo.size,

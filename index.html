@@ -28,7 +28,7 @@
   <meta property="og:site_name" content="BoltDrop ShareP2P" />
   <meta property="og:title" content="BoltDrop — Ultra-Fast Secure P2P File Sharing" />
   <meta property="og:description" content="Direct peer-to-peer file transfer in your browser. No file size limits, no server storage, instant WebRTC speed." />
-  <meta property="og:image" content="https://bolt-share-7q6x.onrender.com/src/assets/images/boltdrop_logo_1786132351711.jpg" />
+  <meta property="og:image" content="https://bolt-share-7q6x.onrender.com/boltdrop_logo_1786132351711.jpg" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="BoltDrop Secure P2P Direct WebRTC File Sharing" />
@@ -41,7 +41,7 @@
   <meta property="twitter:creator" content="@sharep2p" />
   <meta property="twitter:title" content="BoltDrop — Ultra-Fast Secure P2P File Sharing" />
   <meta property="twitter:description" content="Direct peer-to-peer file transfer in your browser. No file size limits, no server storage, instant WebRTC speed." />
-  <meta property="twitter:image" content="https://bolt-share-7q6x.onrender.com/src/assets/images/boltdrop_logo_1786132351711.jpg" />
+  <meta property="twitter:image" content="https://bolt-share-7q6x.onrender.com/boltdrop_logo_1786132351711.jpg" />
 
   <!-- Performance Hints & Preconnects -->
   <link rel="dns-prefetch" href="//fonts.googleapis.com" />
@@ -80,7 +80,7 @@
       "@type": "WebApplication",
       "name": "BoltDrop ShareP2P",
       "url": "https://bolt-share-7q6x.onrender.com/",
-      "image": "https://bolt-share-7q6x.onrender.com/src/assets/images/boltdrop_logo_1786132351711.jpg",
+      "image": "https://bolt-share-7q6x.onrender.com/boltdrop_logo_1786132351711.jpg",
       "description": "Ultra-fast direct peer-to-peer file sharing application using native WebRTC data channels.",
       "applicationCategory": "UtilitiesApplication",
       "operatingSystem": "All (Windows, macOS, Linux, iOS, Android)",
@@ -109,7 +109,7 @@
       "@type": "Organization",
       "name": "BoltDrop ShareP2P",
       "url": "https://bolt-share-7q6x.onrender.com/",
-      "logo": "https://bolt-share-7q6x.onrender.com/src/assets/images/boltdrop_logo_1786132351711.jpg"
+      "logo": "https://bolt-share-7q6x.onrender.com/boltdrop_logo_1786132351711.jpg"
     },
     {
       "@context": "https://schema.org",
@@ -201,6 +201,14 @@
     
     <div class="header-right">
       <span id="my-peer-id" style="display:none">—</span>
+      <button id="pwa-install-btn" class="pwa-install-btn hidden" aria-label="Install App" title="Install BoltDrop App">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>Install App</span>
+      </button>
       <button id="theme-toggle" class="theme-toggle-btn" aria-label="Toggle Dark/Light Mode" title="Toggle Light/Dark Theme">
         <svg class="sun-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="5"></circle>
@@ -487,13 +495,22 @@
     </div>
   </div>
 
-  <!-- Receive toast notification -->
-  <div id="receive-toast" class="receive-toast hidden">
-    <div class="toast-inner">
-      <div class="toast-title" id="toast-title">Incoming file offer</div>
+  <!-- Receive file modal overlay -->
+  <div id="receive-toast" class="receive-modal-overlay hidden">
+    <div class="toast-inner receive-modal-box">
+      <div class="toast-header-row">
+        <div class="receive-icon-badge">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+        </div>
+        <div class="toast-title" id="toast-title">Incoming file offer</div>
+      </div>
       <div class="toast-file" id="toast-file">file.zip</div>
       <div class="toast-actions" id="toast-actions">
-        <button id="accept-btn" class="btn-primary">Accept</button>
+        <button id="accept-btn" class="btn-primary">Accept & Download</button>
         <button id="decline-btn" class="btn-ghost">Decline</button>
       </div>
       <div id="toast-progress-wrap" class="progress-wrap hidden">
@@ -529,6 +546,7 @@
             <span id="toast-transfer-speed" class="transfer-speed">0 B/s</span>
           </div>
         </div>
+      </div>
     </div>
   </div>
 
@@ -593,7 +611,7 @@
       <section class="seo-faq-section" aria-labelledby="faq-title">
         <h2 id="faq-title" class="seo-faq-title">Frequently Asked Questions (FAQ)</h2>
         <div class="seo-faq-grid">
-          <details class="seo-faq-item" open>
+          <details class="seo-faq-item">
             <summary class="seo-faq-question">What makes BoltDrop ShareP2P different from Google Drive or WeTransfer?</summary>
             <div class="seo-faq-answer">
               <p>Traditional cloud providers force you to upload your files to their remote servers before generating a download link. BoltDrop uses native WebRTC peer-to-peer data channels to stream files directly between two devices in real-time, eliminating file size limits and cloud privacy risks.</p>

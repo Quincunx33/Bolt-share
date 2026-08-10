@@ -1,16 +1,23 @@
-const CACHE_NAME = 'boltdrop-cache-v1';
+const CACHE_NAME = 'boltdrop-cache-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon.jpg',
-  '/favicon.ico'
+  '/favicon.ico',
+  '/boltdrop_logo_1786132351711.jpg'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return Promise.all(
+        ASSETS_TO_CACHE.map((url) => {
+          return cache.add(url).catch((err) => {
+            console.warn('[PWA SW] Non-critical cache skip for:', url, err);
+          });
+        })
+      );
     }).then(() => self.skipWaiting())
   );
 });

@@ -558,11 +558,11 @@ export class FileSharePeer {
           sentBytes += batch.files[i].size
         }
         sentBytes += offset
-        const pct = Math.round((sentBytes / totalSize) * 100)
+        const pct = Math.min(99, Math.round((sentBytes / totalSize) * 100))
         
         batch.onProgress({
           pct,
-          currentFilePct: Math.round((offset / file.size) * 100),
+          currentFilePct: Math.min(99, Math.round((offset / file.size) * 100)),
           currentFileIndex: index,
           totalFiles: batch.files.length,
           currentFileName: file.name,

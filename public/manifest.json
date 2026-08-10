@@ -2,9 +2,11 @@
   "name": "BoltDrop",
   "short_name": "BoltDrop",
   "description": "Secure, fast, peer-to-peer file transfer directly inside your browser using WebRTC.",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
+  "background_color": "#0f172a",
   "theme_color": "#2563eb",
   "orientation": "any",
   "icons": [
@@ -12,13 +14,13 @@
       "src": "/icon.jpg",
       "sizes": "512x512",
       "type": "image/jpeg",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/icon.jpg",
       "sizes": "192x192",
       "type": "image/jpeg",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ]
 }
