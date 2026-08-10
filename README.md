@@ -3,7 +3,7 @@
 ![BoltDrop Banner](./src/assets/images/boltdrop_logo_1786132351711.jpg)
 
 <p center>
-  <a href="https://sharep2p.pages.dev/"><img src="https://img.shields.io/badge/Live_Site-sharep2p.pages.dev-2563eb?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Live Site"></a>
+  <a href="https://bolt-share-7q6x.onrender.com/"><img src="https://img.shields.io/badge/Live_Site-bolt--share--7q6x.onrender.com-2563eb?style=for-the-badge&logo=render&logoColor=white" alt="Live Site"></a>
   <img src="https://img.shields.io/badge/WebRTC-Direct_P2P-green?style=for-the-badge" alt="WebRTC">
   <img src="https://img.shields.io/badge/Security-E2E_Encrypted-blueviolet?style=for-the-badge" alt="Encrypted">
 </p>
@@ -20,7 +20,7 @@
 
 ## 🚀 Overview
 
-**BoltDrop** (hosted at [https://sharep2p.pages.dev](https://sharep2p.pages.dev)) is a secure, ultra-fast, direct peer-to-peer (P2P) file sharing application built for modern web browsers. BoltDrop uses native WebRTC data channels to securely stream photos, videos, archives, and documents directly between devices without intermediate servers, cloud storage, or file size limits.
+**BoltDrop** (hosted at [https://bolt-share-7q6x.onrender.com](https://bolt-share-7q6x.onrender.com)) is a secure, ultra-fast, direct peer-to-peer (P2P) file sharing application built for modern web browsers. BoltDrop uses native WebRTC data channels to securely stream photos, videos, archives, and documents directly between devices without intermediate servers, cloud storage, or file size limits.
 
 ---
 
@@ -64,5 +64,6 @@
 
 ## 🌐 Live Production Deployment
 
-- **Main Production URL:** [https://sharep2p.pages.dev](https://sharep2p.pages.dev)
-- **Deployment Platform:** Cloudflare Pages / Cloudflare Workers
+- **Main Production URL:** [https://bolt-share-7q6x.onrender.com](https://bolt-share-7q6x.onrender.com)
+- **Deployment Platform:** Render / Node.js
+
