@@ -132,6 +132,21 @@ function peerLabel(peerId) {
   return peerId
 }
 
+// ── Pending Connection Request Radar State ──
+function setPendingRequestState(isPending) {
+  const radarStage = document.getElementById('radar-stage')
+  if (!radarStage) return
+  if (isPending) {
+    radarStage.classList.add('has-pending-request')
+  } else {
+    const sendModalVisible = sendModal && !sendModal.classList.contains('hidden')
+    const receiveToastVisible = receiveToast && !receiveToast.classList.contains('hidden')
+    if (!sendModalVisible && !receiveToastVisible) {
+      radarStage.classList.remove('has-pending-request')
+    }
+  }
+}
+
 // ── Add peer node to radar ──
 let peerCount = 0
 function addPeerNode(peerId) {
@@ -140,12 +155,17 @@ function addPeerNode(peerId) {
   peerCount++
 
   const node = document.createElement('div')
-  node.className = 'node peer-node'
+  node.className = 'node peer-node new-discovery-burst'
   node.style.left = `${pos.x}%`
   node.style.top  = `${pos.y}%`
   node.dataset.peerId = peerId
 
   node.innerHTML = `
+    <div class="node-ripple-container">
+      <div class="node-ripple-wave wave-1"></div>
+      <div class="node-ripple-wave wave-2"></div>
+      <div class="node-ripple-wave wave-3"></div>
+    </div>
     <div class="avatar">${getAvatar(peerCount)}</div>
     <span>${peerLabel(peerId)}</span>
   `
@@ -153,6 +173,10 @@ function addPeerNode(peerId) {
   node.addEventListener('click', () => openSendModal(peerId))
   peersContainer.appendChild(node)
   peerNodes.set(peerId, node)
+
+  setTimeout(() => {
+    node.classList.remove('new-discovery-burst')
+  }, 2000)
 
   setStatus(`${peerNodes.size} peer${peerNodes.size > 1 ? 's' : ''} nearby — click to send`)
 }
@@ -189,11 +213,38 @@ let lastSpeedUpdate = null
 let lastSpeedBytes = 0
 let currentSpeedText = '0 B/s'
 
+function calculateSpeedRatio(bytesPerSec) {
+  if (!bytesPerSec || bytesPerSec <= 0) return 0
+  const logVal = Math.log10(1 + bytesPerSec)
+  const logMax = Math.log10(1 + 30 * 1024 * 1024) // 30 MB/s max scale
+  return Math.min(1, Math.max(0, logVal / logMax))
+}
+
+function updateSpeedometerGauges(bytesPerSec) {
+  const ratio = calculateSpeedRatio(bytesPerSec)
+  const arcLength = 62.83
+  const dashOffset = arcLength * (1 - ratio)
+  const needleAngle = -120 + (ratio * 240)
+
+  // Send Modal Gauge
+  const sendArc = document.getElementById('gauge-arc-send')
+  const sendNeedle = document.getElementById('gauge-needle-send')
+  if (sendArc) sendArc.style.strokeDashoffset = dashOffset.toFixed(2)
+  if (sendNeedle) sendNeedle.style.transform = `rotate(${needleAngle.toFixed(1)}deg)`
+
+  // Receive Toast Gauge
+  const recvArc = document.getElementById('gauge-arc-receive')
+  const recvNeedle = document.getElementById('gauge-needle-receive')
+  if (recvArc) recvArc.style.strokeDashoffset = dashOffset.toFixed(2)
+  if (recvNeedle) recvNeedle.style.transform = `rotate(${needleAngle.toFixed(1)}deg)`
+}
+
 function resetSpeedTracker() {
   transferStartTime = null
   lastSpeedUpdate = null
   lastSpeedBytes = 0
   currentSpeedText = '0 B/s'
+  updateSpeedometerGauges(0)
 }
 
 function calculateSpeed(currentBytes) {
@@ -202,14 +253,17 @@ function calculateSpeed(currentBytes) {
     transferStartTime = now
     lastSpeedUpdate = now
     lastSpeedBytes = currentBytes
+    updateSpeedometerGauges(0)
     return '0 B/s'
   }
   
   const elapsedMsSinceLast = now - lastSpeedUpdate
-  if (elapsedMsSinceLast >= 400) {
-    const bytesDiff = currentBytes - lastSpeedBytes
+  if (elapsedMsSinceLast >= 300) {
+    const bytesDiff = Math.max(0, currentBytes - lastSpeedBytes)
     const instSpeed = bytesDiff / (elapsedMsSinceLast / 1000) // bytes per second
     currentSpeedText = formatSpeed(instSpeed)
+    
+    updateSpeedometerGauges(instSpeed)
     
     lastSpeedUpdate = now
     lastSpeedBytes = currentBytes
@@ -567,6 +621,7 @@ function openSendModal(peerId) {
   resetSpeedTracker()
   clearPreviews()
   sendModal.classList.remove('hidden')
+  setPendingRequestState(true)
 }
 
 function closeSendModal() {
@@ -577,6 +632,7 @@ function closeSendModal() {
   if (transferSpeed) transferSpeed.textContent = '0 B/s'
   resetSpeedTracker()
   clearPreviews()
+  setPendingRequestState(false)
 }
 
 cancelBtn.addEventListener('click', closeSendModal)
@@ -775,12 +831,14 @@ function showReceiveToast(peerId, meta) {
   }
 
   receiveToast.classList.remove('hidden')
+  setPendingRequestState(true)
 }
 
 function hideReceiveToast() {
   receiveToast.classList.add('hidden')
   resetSpeedTracker()
   if (toastTransferSpeed) toastTransferSpeed.textContent = '0 B/s'
+  setPendingRequestState(false)
 }
 
 acceptBtn.addEventListener('click', () => {
@@ -1065,3 +1123,30 @@ function renderSharePanel() {
 
 // Initial render
 renderSharePanel()
+
+// ── Theme Switcher ──
+const themeToggleBtn = document.getElementById('theme-toggle')
+const themeMetaTag = document.querySelector('meta[name="theme-color"]')
+
+function updateThemeMetaColor(isDark) {
+  if (themeMetaTag) {
+    themeMetaTag.setAttribute('content', isDark ? '#0b0f19' : '#2563eb')
+  }
+}
+
+function initThemeToggle() {
+  const currentTheme = document.documentElement.getAttribute('data-theme') || 'light'
+  updateThemeMetaColor(currentTheme === 'dark')
+
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener('click', () => {
+      const activeTheme = document.documentElement.getAttribute('data-theme')
+      const newTheme = activeTheme === 'dark' ? 'light' : 'dark'
+      document.documentElement.setAttribute('data-theme', newTheme)
+      localStorage.setItem('boltdrop_theme', newTheme)
+      updateThemeMetaColor(newTheme === 'dark')
+    })
+  }
+}
+
+initThemeToggle()
