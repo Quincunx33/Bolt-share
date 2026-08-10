@@ -61,13 +61,21 @@ wss.on('connection', (ws, request) => {
 
     // Determine room — group by connection IP or room override param
     const rawIp = request.headers['x-forwarded-for'] || request.socket.remoteAddress || 'default';
-    const publicIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
+    const cleanIp = rawIp.split(',')[0].trim().replace(/^::ffff:/, '');
     const roomParam = url.searchParams.get('room');
-    const roomId = (roomParam && roomParam !== 'filedrop-default-room')
-      ? roomParam
-      : publicIp;
+    
+    let roomId = cleanIp;
+    if (roomParam && roomParam !== 'filedrop-default-room') {
+      roomId = roomParam;
+    } else if (cleanIp.includes(':')) {
+      const parts = cleanIp.split(':').filter(Boolean);
+      const prefix = parts.slice(0, Math.min(4, parts.length)).join(':');
+      roomId = `v6-${prefix}`;
+    } else {
+      roomId = `v4-${cleanIp}`;
+    }
 
-    console.log(`[signal] peer ${peerId} joining room ${roomId}`);
+    console.log(`[signal] peer ${peerId} joining room ${roomId} (IP: ${cleanIp})`);
 
     const room = getOrCreateRoom(roomId);
 
@@ -118,7 +126,7 @@ wss.on('connection', (ws, request) => {
   }
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
