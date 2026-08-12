@@ -20,7 +20,7 @@
 
 ## 🚀 Overview
 
-**BoltDrop** (hosted at [https://bolt-share-7q6x.onrender.com](https://bolt-share-7q6x.onrender.com)) is a secure, ultra-fast, direct peer-to-peer (P2P) file sharing application built for modern web browsers. BoltDrop uses native WebRTC data channels to securely stream photos, videos, archives, and documents directly between devices without intermediate servers, cloud storage, or file size limits.
+**BoltDrop** (hosted at [https://bolt-share-7q6x.onrender.com](https://boltshare-gogafkut.manus.space)) is a secure, ultra-fast, direct peer-to-peer (P2P) file sharing application built for modern web browsers. BoltDrop uses native WebRTC data channels to securely stream photos, videos, archives, and documents directly between devices without intermediate servers, cloud storage, or file size limits.
 
 ---
 
@@ -64,6 +64,6 @@
 
 ## 🌐 Live Production Deployment
 
-- **Main Production URL:** [https://bolt-share-7q6x.onrender.com](https://bolt-share-7q6x.onrender.com)
+- **Main Production URL:** [https://boltshare-gogafkut.manus.space](https://boltshare-gogafkut.manus.space)
 - **Deployment Platform:** Render / Node.js
 
